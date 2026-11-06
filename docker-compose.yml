@@ -1,0 +1,55 @@
+﻿version: '3.8'
+
+services:
+  # Centralna baza danych
+  carrental-db:
+    image: ://microsoft.com
+    container_name: carrental-db
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=YourSecurePassword123!
+    ports:
+      - "1433:1433"
+    healthcheck:
+      test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "YourSecurePassword123!", "-C", "-Q", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Instancja aplikacji: Node 1
+  carrental-node-1:
+    build:
+      context: .
+      dockerfile: CarRental.WebApi/Dockerfile
+    container_name: carrental-node-1
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Server=carrental-db;Database=CarRentalProdDb;User Id=sa;Password=YourSecurePassword123!;TrustServerCertificate=True;
+    depends_on:
+      carrental-db:
+        condition: service_healthy
+
+  # Instancja aplikacji: Node 2 (Zapasowy / Równoległy)
+  carrental-node-2:
+    build:
+      context: .
+      dockerfile: CarRental.WebApi/Dockerfile
+    container_name: carrental-node-2
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Server=carrental-db;Database=CarRentalProdDb;User Id=sa;Password=YourSecurePassword123!;TrustServerCertificate=True;
+    depends_on:
+      carrental-db:
+        condition: service_healthy
+
+  # Load Balancer kierujący ruch na żywe instancje
+  load-balancer:
+    image: nginx:latest
+    container_name: carrental-load-balancer
+    ports:
+      - "5000:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - carrental-node-1
+      - carrental-node-2
